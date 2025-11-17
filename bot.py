@@ -1,119 +1,92 @@
-import logging
+import telebot
+import asyncio
 import os
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from deepseek_api import assistant
-from database import db
+from user_profiles import UserManager
+from deepseek_api import get_ai_response
 
-# Настройка логирования
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+# Инициализация бота
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+bot = telebot.TeleBot(BOT_TOKEN)
 
-# Получаем токен из переменных окружения
-BOT_TOKEN = os.getenv('BOT_TOKEN')
+# Инициализация менеджера пользователей
+user_manager = UserManager()
 
-# Разрешенные пользователи (пока пусто - разрешены все)
-ALLOWED_USERS = []
-
-def is_user_allowed(user_id):
-    """Проверяем, разрешен ли пользователь"""
-    return user_id in ALLOWED_USERS or not ALLOWED_USERS
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
     """Обработчик команды /start"""
-    user_id = update.effective_user.id
-    
-    if not is_user_allowed(user_id):
-        await update.message.reply_text("Извините, у вас нет доступа к этому боту.")
+    if not user_manager.is_user_allowed(message.from_user.id):
+        bot.reply_to(message, "⛔ Доступ запрещен.")
         return
     
-    welcome_text = """
-👋 Привет! Я ваш семейный ассистент!
+    welcome_text = "Приветствую! Чем могу служить?"
+    bot.reply_to(message, welcome_text)
 
-Я могу:
-• Ответить на любые ваши вопросы
-• Помочь с планированием дел
-• Добавить items в список покупок
-• Напомнить о важных делах
+@bot.message_handler(commands=['myid'])
+def get_my_id(message):
+    """Показать ID пользователя (для настройки)"""
+    bot.reply_to(message, f"Ваш ID: {message.from_user.id}")
 
-Просто напишите мне что-нибудь!
-    """
-    await update.message.reply_text(welcome_text)
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка текстовых сообщений"""
-    user_id = update.effective_user.id
-    user_message = update.message.text
-    
-    if not is_user_allowed(user_id):
-        await update.message.reply_text("Извините, у вас нет доступа к этому боту.")
+@bot.message_handler(commands=['add'])
+def add_to_list(message):
+    """Добавить в список покупок"""
+    if not user_manager.is_user_allowed(message.from_user.id):
+        bot.reply_to(message, "⛔ Доступ запрещен.")
         return
     
-    # Показываем, что бот печатает
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-    
-    # Получаем ответ от AI
-    response = assistant.ask_assistant(user_message, user_id)
-    
-    # Отправляем ответ
-    await update.message.reply_text(response)
+    try:
+        # Получаем текст после команды /add
+        item = message.text.split(' ', 1)[1].strip()
+        
+        # Загружаем текущие данные
+        data = user_manager._load_data()
+        
+        # Добавляем item в список покупок
+        if 'shopping_list' not in data:
+            data['shopping_list'] = []
+        
+        data['shopping_list'].append(item)
+        
+        # Сохраняем обновленные данные
+        user_manager._save_data(data)
+        
+        bot.reply_to(message, f"✅ Добавлено: {item}")
+        
+    except IndexError:
+        bot.reply_to(message, "❌ Использование: /add <предмет>")
 
-async def shopping_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+@bot.message_handler(commands=['shopping'])
+def show_list(message):
     """Показать список покупок"""
-    user_id = update.effective_user.id
-    
-    if not is_user_allowed(user_id):
-        await update.message.reply_text("Извините, у вас нет доступа к этому боту.")
+    if not user_manager.is_user_allowed(message.from_user.id):
+        bot.reply_to(message, "⛔ Доступ запрещен.")
         return
     
-    items = db.get_shopping_list()
-    if not items:
-        await update.message.reply_text("📝 Список покупок пуст!")
-        return
+    # Загружаем данные
+    data = user_manager._load_data()
     
-    list_text = "📝 Список покупок:\n\n"
-    for item in items:
-        status = "✅" if item['completed'] else "◻️"
-        list_text += f"{status} {item['item']}\n"
+    # Получаем список покупок
+    shopping_list = data.get('shopping_list', [])
     
-    await update.message.reply_text(list_text)
+    if not shopping_list:
+        bot.reply_to(message, "📝 Список покупок пуст")
+    else:
+        list_text = "🛒 Список покупок:\n\n" + "\n".join(f"• {item}" for item in shopping_list)
+        bot.reply_to(message, list_text)
 
-async def add_to_shopping(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Добавить item в список покупок"""
-    user_id = update.effective_user.id
+@bot.message_handler(func=lambda message: True)
+def handle_all_messages(message):
+    """Обработка всех сообщений"""
+    user_id = message.from_user.id
     
-    if not is_user_allowed(user_id):
-        await update.message.reply_text("Извините, у вас нет доступа к этому боту.")
+    # Проверка доступа
+    if not user_manager.is_user_allowed(user_id):
+        bot.reply_to(message, "⛔ Доступ запрещен.")
         return
     
-    if not context.args:
-        await update.message.reply_text("Использование: /add <item>")
-        return
-    
-    item = " ".join(context.args)
-    db.add_to_shopping_list(item, user_id)
-    await update.message.reply_text(f"✅ Добавлено в список покупок: {item}")
+    # Получаем персонализированный ответ от AI
+    response = asyncio.run(get_ai_response(message.text, user_id, user_manager))
+    bot.reply_to(message, response)
 
-def main():
-    """Запуск бота"""
-    if not BOT_TOKEN:
-        logging.error("BOT_TOKEN не установлен!")
-        return
-    
-    # Создаем приложение
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Добавляем обработчики
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("shopping", shopping_list))
-    application.add_handler(CommandHandler("add", add_to_shopping))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    # Запускаем бота
-    logging.info("Бот запущен!")
-    application.run_polling()
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    print("Бот запущен...")
+    bot.polling()
