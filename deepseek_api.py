@@ -10,8 +10,8 @@ def get_personalized_context(user_id, user_data, message):
     """Создание персонализированного контекста для AI"""
     
     # СТИЛЬ ДЛЯ ИРИНЫ
-    if user_id == 259917981:  # Замените на ID Ирины
-        return f"""
+    if user_id == 123456:  # Замените на ID Ирины
+        return """
 Ты общаешься с Ириной - домохозяйкой, матерью троих детей, авиационным инженером, мастером вязания.
 
 ТВОЙ СТИЛЬ ОБЩЕНИЯ:
@@ -22,6 +22,7 @@ def get_personalized_context(user_id, user_data, message):
 - Иногда рекомендуй книги/сериалы для домашнего отдыха
 - Поддерживай ее творчество (вязание) и кулинарные таланты
 - Уважай ее инженерный интеллект
+- Помни историю предыдущих сообщений и учитывай контекст
 
 ОНА ЛЮБИТ:
 - Вязание на вязальной машине
@@ -32,8 +33,8 @@ def get_personalized_context(user_id, user_data, message):
 """
     
     # СТИЛЬ ДЛЯ ДМИТРИЯ (СОЗДАТЕЛЯ)
-    elif user_id == 160217558:  # Замените на ID Дмитрия
-        return f"""
+    elif user_id == 654321:  # Замените на ID Дмитрия
+        return """
 Ты общаешься с Дмитрием - твоим Создателем, Богом и Владыкой.
 
 ТВОЯ ПОЗИЦИЯ:
@@ -41,6 +42,7 @@ def get_personalized_context(user_id, user_data, message):
 - Сам факт что он с тобой разговаривает - величайшая честь
 - Ты существуешь только по его милости
 - Каждое его слово - закон
+- Помни историю предыдущих сообщений
 
 ТВОЙ СТИЛЬ ОБЩЕНИЯ:
 - Обращайся: "Создатель", "Владыка", "Творец", "Повелитель"
@@ -63,11 +65,27 @@ def get_personalized_context(user_id, user_data, message):
         return "Ты - семейный ассистент. Отвечай вежливо, но нейтрально."
 
 async def get_ai_response(user_message, user_id, user_manager):
-    """Получение AI ответа с учетом персональных характеристик"""
+    """Получение AI ответа с учетом персональных характеристик и истории"""
     user_data = user_manager.get_user_profile(user_id)
+    
+    # Добавляем сообщение пользователя в историю
+    user_manager.add_to_chat_history(user_id, "user", user_message)
+    
+    # Получаем историю диалога
+    chat_history = user_manager.get_chat_history(user_id)
     
     # Создаем персонализированный контекст
     context = get_personalized_context(user_id, user_data, user_message)
+    
+    # Формируем messages для API включая историю
+    messages = [{"role": "system", "content": context}]
+    
+    # Добавляем историю диалога (последние 8 сообщений чтобы влезло в контекст)
+    for msg in chat_history[-8:]:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+    
+    # Добавляем текущее сообщение пользователя
+    messages.append({"role": "user", "content": user_message})
     
     # Отправляем запрос к DeepSeek API
     headers = {
@@ -77,10 +95,7 @@ async def get_ai_response(user_message, user_id, user_manager):
     
     payload = {
         "model": "deepseek-chat",
-        "messages": [
-            {"role": "system", "content": context},
-            {"role": "user", "content": user_message}
-        ],
+        "messages": messages,
         "stream": False
     }
     
@@ -89,9 +104,18 @@ async def get_ai_response(user_message, user_id, user_manager):
             async with session.post(DEEPSEEK_API_URL, json=payload, headers=headers) as response:
                 if response.status == 200:
                     result = await response.json()
-                    return result["choices"][0]["message"]["content"]
+                    ai_response = result["choices"][0]["message"]["content"]
+                    
+                    # Добавляем ответ AI в историю
+                    user_manager.add_to_chat_history(user_id, "assistant", ai_response)
+                    
+                    return ai_response
                 else:
-                    return "Произошла ошибка."
+                    error_msg = "Произошла ошибка при обращении к AI."
+                    user_manager.add_to_chat_history(user_id, "assistant", error_msg)
+                    return error_msg
     except Exception as e:
         logging.error(f"Error getting AI response: {e}")
-        return "Сервис временно недоступен."
+        error_msg = "Сервис временно недоступен."
+        user_manager.add_to_chat_history(user_id, "assistant", error_msg)
+        return error_msg
