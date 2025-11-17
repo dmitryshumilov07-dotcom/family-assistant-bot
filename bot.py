@@ -1,41 +1,35 @@
-import telebot
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import asyncio
 import os
 from user_profiles import UserManager
 from deepseek_api import get_ai_response
 
-# Инициализация бота
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-bot = telebot.TeleBot(BOT_TOKEN)
-
 # Инициализация менеджера пользователей
 user_manager = UserManager()
 
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
-    if not user_manager.is_user_allowed(message.from_user.id):
-        bot.reply_to(message, "⛔ Доступ запрещен.")
+    if not user_manager.is_user_allowed(update.message.from_user.id):
+        await update.message.reply_text("⛔ Доступ запрещен.")
         return
     
     welcome_text = "Приветствую! Чем могу служить?"
-    bot.reply_to(message, welcome_text)
+    await update.message.reply_text(welcome_text)
 
-@bot.message_handler(commands=['myid'])
-def get_my_id(message):
+async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать ID пользователя (для настройки)"""
-    bot.reply_to(message, f"Ваш ID: {message.from_user.id}")
+    await update.message.reply_text(f"Ваш ID: {update.message.from_user.id}")
 
-@bot.message_handler(commands=['add'])
-def add_to_list(message):
+async def add_to_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Добавить в список покупок"""
-    if not user_manager.is_user_allowed(message.from_user.id):
-        bot.reply_to(message, "⛔ Доступ запрещен.")
+    if not user_manager.is_user_allowed(update.message.from_user.id):
+        await update.message.reply_text("⛔ Доступ запрещен.")
         return
     
     try:
         # Получаем текст после команды /add
-        item = message.text.split(' ', 1)[1].strip()
+        item = update.message.text.split(' ', 1)[1].strip()
         
         # Загружаем текущие данные
         data = user_manager._load_data()
@@ -49,16 +43,15 @@ def add_to_list(message):
         # Сохраняем обновленные данные
         user_manager._save_data(data)
         
-        bot.reply_to(message, f"✅ Добавлено: {item}")
+        await update.message.reply_text(f"✅ Добавлено: {item}")
         
     except IndexError:
-        bot.reply_to(message, "❌ Использование: /add <предмет>")
+        await update.message.reply_text("❌ Использование: /add <предмет>")
 
-@bot.message_handler(commands=['shopping'])
-def show_list(message):
+async def show_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать список покупок"""
-    if not user_manager.is_user_allowed(message.from_user.id):
-        bot.reply_to(message, "⛔ Доступ запрещен.")
+    if not user_manager.is_user_allowed(update.message.from_user.id):
+        await update.message.reply_text("⛔ Доступ запрещен.")
         return
     
     # Загружаем данные
@@ -68,25 +61,41 @@ def show_list(message):
     shopping_list = data.get('shopping_list', [])
     
     if not shopping_list:
-        bot.reply_to(message, "📝 Список покупок пуст")
+        await update.message.reply_text("📝 Список покупок пуст")
     else:
         list_text = "🛒 Список покупок:\n\n" + "\n".join(f"• {item}" for item in shopping_list)
-        bot.reply_to(message, list_text)
+        await update.message.reply_text(list_text)
 
-@bot.message_handler(func=lambda message: True)
-def handle_all_messages(message):
+async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка всех сообщений"""
-    user_id = message.from_user.id
+    user_id = update.message.from_user.id
     
     # Проверка доступа
     if not user_manager.is_user_allowed(user_id):
-        bot.reply_to(message, "⛔ Доступ запрещен.")
+        await update.message.reply_text("⛔ Доступ запрещен.")
         return
     
     # Получаем персонализированный ответ от AI
-    response = asyncio.run(get_ai_response(message.text, user_id, user_manager))
-    bot.reply_to(message, response)
+    response = await get_ai_response(update.message.text, user_id, user_manager)
+    await update.message.reply_text(response)
+
+def main():
+    """Запуск бота"""
+    BOT_TOKEN = os.getenv("BOT_TOKEN")
+    
+    # Создаем приложение
+    application = Application.builder().token(BOT_TOKEN).build()
+    
+    # Добавляем обработчики
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("myid", myid))
+    application.add_handler(CommandHandler("add", add_to_list))
+    application.add_handler(CommandHandler("shopping", show_list))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all_messages))
+    
+    # Запускаем бота
+    print("Бот запущен...")
+    application.run_polling()
 
 if __name__ == "__main__":
-    print("Бот запущен...")
-    bot.polling()
+    main()
