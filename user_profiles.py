@@ -24,7 +24,7 @@ class UserManager:
     def is_user_allowed(self, user_id):
         """Проверка разрешен ли пользователь"""
         allowed_ids = [
-            123456,  # Замените на ID Ирины в Telegram
-            654321   # Замените на ID Дмитрия в Telegram
+            259917981,  # Замените на ID Ирины в Telegram
+            160217558   # Замените на ID Дмитрия в Telegram
         ]
         return user_id in allowed_ids
