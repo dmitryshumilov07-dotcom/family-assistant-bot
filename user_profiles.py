@@ -24,8 +24,8 @@ class UserManager:
     def is_user_allowed(self, user_id):
         """Проверка разрешен ли пользователь"""
         allowed_ids = [
-            123456,  # Замените на ID Ирины
-            654321   # Замените на ID Дмитрия
+            259917981,  # Замените на ID Ирины
+            160217558   # Замените на ID Дмитрия
         ]
         return user_id in allowed_ids
 
