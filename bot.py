@@ -1,7 +1,7 @@
 import logging
 import os
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from deepseek_api import assistant
 from database import db
 
@@ -21,12 +21,12 @@ def is_user_allowed(user_id):
     """Проверяем, разрешен ли пользователь"""
     return user_id in ALLOWED_USERS or not ALLOWED_USERS
 
-def start(update: Update, context: CallbackContext):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
     user_id = update.effective_user.id
     
     if not is_user_allowed(user_id):
-        update.message.reply_text("Извините, у вас нет доступа к этому боту.")
+        await update.message.reply_text("Извините, у вас нет доступа к этому боту.")
         return
     
     welcome_text = """
@@ -40,34 +40,37 @@ def start(update: Update, context: CallbackContext):
 
 Просто напишите мне что-нибудь!
     """
-    update.message.reply_text(welcome_text)
+    await update.message.reply_text(welcome_text)
 
-def handle_message(update: Update, context: CallbackContext):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка текстовых сообщений"""
     user_id = update.effective_user.id
     user_message = update.message.text
     
     if not is_user_allowed(user_id):
-        update.message.reply_text("Извините, у вас нет доступа к этому боту.")
+        await update.message.reply_text("Извините, у вас нет доступа к этому боту.")
         return
+    
+    # Показываем, что бот печатает
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     
     # Получаем ответ от AI
     response = assistant.ask_assistant(user_message, user_id)
     
     # Отправляем ответ
-    update.message.reply_text(response)
+    await update.message.reply_text(response)
 
-def shopping_list(update: Update, context: CallbackContext):
+async def shopping_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать список покупок"""
     user_id = update.effective_user.id
     
     if not is_user_allowed(user_id):
-        update.message.reply_text("Извините, у вас нет доступа к этому боту.")
+        await update.message.reply_text("Извините, у вас нет доступа к этому боту.")
         return
     
     items = db.get_shopping_list()
     if not items:
-        update.message.reply_text("📝 Список покупок пуст!")
+        await update.message.reply_text("📝 Список покупок пуст!")
         return
     
     list_text = "📝 Список покупок:\n\n"
@@ -75,23 +78,23 @@ def shopping_list(update: Update, context: CallbackContext):
         status = "✅" if item['completed'] else "◻️"
         list_text += f"{status} {item['item']}\n"
     
-    update.message.reply_text(list_text)
+    await update.message.reply_text(list_text)
 
-def add_to_shopping(update: Update, context: CallbackContext):
+async def add_to_shopping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Добавить item в список покупок"""
     user_id = update.effective_user.id
     
     if not is_user_allowed(user_id):
-        update.message.reply_text("Извините, у вас нет доступа к этому боту.")
+        await update.message.reply_text("Извините, у вас нет доступа к этому боту.")
         return
     
     if not context.args:
-        update.message.reply_text("Использование: /add <item>")
+        await update.message.reply_text("Использование: /add <item>")
         return
     
     item = " ".join(context.args)
     db.add_to_shopping_list(item, user_id)
-    update.message.reply_text(f"✅ Добавлено в список покупок: {item}")
+    await update.message.reply_text(f"✅ Добавлено в список покупок: {item}")
 
 def main():
     """Запуск бота"""
@@ -99,20 +102,18 @@ def main():
         logging.error("BOT_TOKEN не установлен!")
         return
     
-    # Создаем updater и dispatcher
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dispatcher = updater.dispatcher
+    # Создаем приложение
+    application = Application.builder().token(BOT_TOKEN).build()
     
     # Добавляем обработчики
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CommandHandler("shopping", shopping_list))
-    dispatcher.add_handler(CommandHandler("add", add_to_shopping))
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("shopping", shopping_list))
+    application.add_handler(CommandHandler("add", add_to_shopping))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # Запускаем бота
     logging.info("Бот запущен!")
-    updater.start_polling()
-    updater.idle()
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
