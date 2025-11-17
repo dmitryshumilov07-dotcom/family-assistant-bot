@@ -1,7 +1,7 @@
 import logging
+import os
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from config import BOT_TOKEN, ALLOWED_USERS
 from deepseek_api import assistant
 from database import db
 
@@ -10,6 +10,12 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+
+# Получаем токен из переменных окружения
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+
+# Разрешенные пользователи (пока пусто - разрешены все)
+ALLOWED_USERS = []
 
 def is_user_allowed(user_id):
     """Проверяем, разрешен ли пользователь"""
@@ -106,6 +112,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # Запускаем бота
+    logging.info("Бот запущен!")
     application.run_polling()
 
 if __name__ == '__main__':
