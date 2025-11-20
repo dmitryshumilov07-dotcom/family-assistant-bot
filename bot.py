@@ -94,17 +94,19 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             history_text += f"{role}: {msg['content']}\n\n"
         await update.message.reply_text(history_text)
 
+# НОВАЯ ВЕРСИЯ - ВСТАВИТЬ
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка всех сообщений"""
     user_id = update.message.from_user.id
     
-    # Проверка доступа
     if not user_manager.is_user_allowed(user_id):
         await update.message.reply_text("⛔ Доступ запрещен.")
         return
     
-    # Получаем персонализированный ответ от AI
-    response = await get_ai_response(update.message.text, user_id, user_manager)
+    # Показываем статус "печатает"
+    async with update.message._chat.send_action(action="typing"):
+        response = await get_ai_response(update.message.text, user_id, user_manager)
+    
     await update.message.reply_text(response)
 
 def main():
@@ -134,3 +136,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
