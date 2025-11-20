@@ -104,7 +104,7 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     
     # Показываем статус "печатает"
-    async with update.message._chat.send_action(action="typing"):
+    async with update.message.chat.send_action(action="typing"):
         response = await get_ai_response(update.message.text, user_id, user_manager)
     
     await update.message.reply_text(response)
