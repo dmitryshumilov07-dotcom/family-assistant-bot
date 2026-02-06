@@ -1,0 +1,33 @@
+environment: dev
+
+defaults:
+  base_url: "http://api.weatherapi.com/v1"
+  language: "ru"
+  cache_ttl_minutes: 30
+  forecast_days: 3
+  request_timeout: 10
+  max_retries: 3
+  backoff_base_seconds: 1
+  backoff_max_seconds: 8
+  rate_limit_per_minute: 55
+  fallback_cache_path: "/tmp/weather_api_cache.json"
+  fallback_max_age_hours: 12
+  last_sent_state_path: "/tmp/weather_last_sent.json"
+  log_level: "INFO"
+  significant_change:
+    temp_c_threshold: 3
+    feelslike_c_threshold: 3
+    rain_chance_threshold: 30
+    wind_kph_threshold: 10
+    condition_change: true
+
+environments:
+  dev:
+    api_key: "CHANGE_ME"
+    cities:
+      - "Moscow"
+  prod:
+    api_key: "${WEATHER_API_KEY}"
+    cities:
+      - "Moscow"
+      - "Saint Petersburg"
