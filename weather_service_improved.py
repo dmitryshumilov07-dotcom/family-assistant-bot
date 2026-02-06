@@ -24,7 +24,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import requests
@@ -563,7 +563,7 @@ class WeatherService:
             errors.append(str(exc))
         return {
             "status": status,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "api_reachable": api_reachable,
             "cache_entries": self.cache.size(),
             "last_successful_api_at": (
@@ -823,7 +823,11 @@ def setup_logger(log_level: str) -> logging.Logger:
 
 
 def log_event(logger: logging.Logger, level: str, event: str, **fields: Any) -> None:
-    payload = {"event": event, "timestamp": datetime.utcnow().isoformat(), **fields}
+    payload = {
+        "event": event,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **fields,
+    }
     message = json.dumps(payload, ensure_ascii=False)
     log_fn = getattr(logger, level, logger.info)
     log_fn(message)
