@@ -1,5 +1,6 @@
 import json
 from datetime import datetime
+from json import JSONDecodeError
 
 class UserManager:
     def __init__(self, db_path='family_data.json'):
@@ -11,10 +12,33 @@ class UserManager:
                 return json.load(f)
         except FileNotFoundError:
             return {"shopping_list": [], "users": {}}
+        except JSONDecodeError:
+            # Поврежденный файл данных — стартуем с пустой структуры, чтобы бот не падал.
+            return {"shopping_list": [], "users": {}}
     
     def _save_data(self, data):
         with open(self.db_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def ensure_user(self, tg_user):
+        """Гарантирует наличие записи пользователя в базе."""
+        data = self._load_data()
+        user_id_str = str(tg_user.id)
+
+        users = data.setdefault("users", {})
+        if user_id_str not in users:
+            users[user_id_str] = {
+                "created_at": datetime.now().isoformat(),
+                "chat_history": [],
+            }
+
+        # Обновляем метаданные (безопасно)
+        users[user_id_str]["last_seen_at"] = datetime.now().isoformat()
+        users[user_id_str]["username"] = getattr(tg_user, "username", None)
+        users[user_id_str]["first_name"] = getattr(tg_user, "first_name", None)
+        users[user_id_str]["last_name"] = getattr(tg_user, "last_name", None)
+
+        self._save_data(data)
     
     def get_user_profile(self, user_id):
         """Получить профиль пользователя по ID"""
@@ -34,8 +58,9 @@ class UserManager:
         data = self._load_data()
         user_id_str = str(user_id)
         
+        data.setdefault("users", {})
         if user_id_str not in data["users"]:
-            return
+            data["users"][user_id_str] = {"created_at": datetime.now().isoformat(), "chat_history": []}
         
         if "chat_history" not in data["users"][user_id_str]:
             data["users"][user_id_str]["chat_history"] = []

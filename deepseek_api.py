@@ -1,9 +1,7 @@
 import aiohttp
 import logging
 import os
-from user_profiles import UserManager
 
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
 
 def get_personalized_context(user_id, user_data, message):
@@ -66,6 +64,12 @@ def get_personalized_context(user_id, user_data, message):
 
 async def get_ai_response(user_message, user_id, user_manager):
     """Получение AI ответа с учетом персональных характеристик и истории"""
+    api_key = os.getenv("DEEPSEEK_API_KEY")
+    if not api_key:
+        msg = "⚠️ AI не настроен: отсутствует DEEPSEEK_API_KEY."
+        user_manager.add_to_chat_history(user_id, "assistant", msg)
+        return msg
+
     user_data = user_manager.get_user_profile(user_id)
     
     # Добавляем сообщение пользователя в историю
@@ -89,7 +93,7 @@ async def get_ai_response(user_message, user_id, user_manager):
     
     # Отправляем запрос к DeepSeek API
     headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
     
@@ -100,7 +104,8 @@ async def get_ai_response(user_message, user_id, user_manager):
     }
     
     try:
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(DEEPSEEK_API_URL, json=payload, headers=headers) as response:
                 if response.status == 200:
                     result = await response.json()
@@ -111,6 +116,11 @@ async def get_ai_response(user_message, user_id, user_manager):
                     
                     return ai_response
                 else:
+                    try:
+                        body = await response.text()
+                    except Exception:
+                        body = "<unreadable>"
+                    logging.error("DeepSeek API error: status=%s body=%s", response.status, body[:500])
                     error_msg = "Произошла ошибка при обращении к AI."
                     user_manager.add_to_chat_history(user_id, "assistant", error_msg)
                     return error_msg
