@@ -1,12 +1,31 @@
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from datetime import datetime
 import os
 import asyncio
+import socket
+import sys
 from user_profiles import UserManager
 from deepseek_api import get_ai_response
 
 # Инициализация менеджера пользователей
 user_manager = UserManager()
+START_TIME = datetime.now()
+
+def _format_timedelta(delta):
+    total_seconds = max(0, int(delta.total_seconds()))
+    days, remainder = divmod(total_seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    parts = []
+    if days:
+        parts.append(f"{days}д")
+    if hours or days:
+        parts.append(f"{hours}ч")
+    if minutes or hours or days:
+        parts.append(f"{minutes}м")
+    parts.append(f"{seconds}с")
+    return " ".join(parts)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
@@ -94,6 +113,50 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             history_text += f"{role}: {msg['content']}\n\n"
         await update.message.reply_text(history_text)
 
+async def diagnostics(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Диагностика состояния бота и окружения"""
+    if not user_manager.is_user_allowed(update.message.from_user.id):
+        await update.message.reply_text("⛔ Доступ запрещен.")
+        return
+
+    now = datetime.now()
+    uptime = _format_timedelta(now - START_TIME)
+    bot_token_set = bool(os.getenv("BOT_TOKEN"))
+    deepseek_key_set = bool(os.getenv("DEEPSEEK_API_KEY"))
+    db_path = user_manager.db_path
+    db_exists = os.path.exists(db_path)
+    db_size = os.path.getsize(db_path) if db_exists else 0
+
+    data_error = None
+    try:
+        data = user_manager._load_data()
+    except Exception as exc:
+        data = {"shopping_list": [], "users": {}}
+        data_error = type(exc).__name__
+
+    users = data.get("users", {})
+    shopping_list = data.get("shopping_list", [])
+    total_history = sum(len(profile.get("chat_history", [])) for profile in users.values())
+
+    lines = [
+        "🩺 Диагностика сервера:",
+        f"• Время сервера: {now:%Y-%m-%d %H:%M:%S}",
+        f"• Аптайм: {uptime}",
+        f"• Host: {socket.gethostname()}",
+        f"• PID: {os.getpid()}",
+        f"• Python: {sys.version.split()[0]}",
+        f"• BOT_TOKEN: {'установлен' if bot_token_set else 'НЕ установлен'}",
+        f"• DEEPSEEK_API_KEY: {'установлен' if deepseek_key_set else 'НЕ установлен'}",
+        f"• БД: {db_path} ({'есть' if db_exists else 'нет'}, {db_size} байт)",
+        f"• Пользователей: {len(users)}",
+        f"• Список покупок: {len(shopping_list)}",
+        f"• История диалога: {total_history}",
+    ]
+    if data_error:
+        lines.append(f"• Ошибка чтения БД: {data_error}")
+
+    await update.message.reply_text("\n".join(lines))
+
 # НОВАЯ ВЕРСИЯ - ВСТАВИТЬ
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка всех сообщений"""
@@ -126,6 +189,7 @@ def main():
     application.add_handler(CommandHandler("shopping", show_list))
     application.add_handler(CommandHandler("clearhistory", clear_history))
     application.add_handler(CommandHandler("history", show_history))
+    application.add_handler(CommandHandler("diagnostics", diagnostics))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all_messages))
     
     print("🤖 Бот запускается...")
