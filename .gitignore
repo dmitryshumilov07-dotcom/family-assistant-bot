@@ -1,0 +1,10 @@
+
+# Family Assistant Bot - автоматически добавлено
+.env
+family_data.json
+family_data.json.backup
+diagnostic_report_*.json
+__pycache__/
+*.pyc
+*.pyo
+*.log
